@@ -134,6 +134,59 @@
 
     require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' } });
     require(['vs/editor/editor.main'], () => {
+
+      // -----------------------------------------------------------------
+      // AUTOCOMPLETE ENGINE (Applies to ALL languages)
+      // -----------------------------------------------------------------
+      
+      // 1. Define your custom keywords here
+      const customKeywords = [
+          'print', 'console', 'log', 'public', 'private', 'class', 
+          'function', 'return', 'import', 'export', 'include'
+      ];
+
+      // 2. Loop through every language and register the autofill provider
+      LANGUAGES.forEach(lang => {
+          monaco.languages.registerCompletionItemProvider(lang.id, {
+              provideCompletionItems: function(model, position) {
+                  // Get the word the user is currently typing
+                  const word = model.getWordUntilPosition(position);
+                  const range = {
+                      startLineNumber: position.lineNumber,
+                      endLineNumber: position.lineNumber,
+                      startColumn: word.startColumn,
+                      endColumn: word.endColumn
+                  };
+
+                  // Map our custom words into Monaco Suggestion Objects
+                  const suggestions = customKeywords.map(keyword => {
+                      return {
+                          label: keyword,
+                          kind: monaco.languages.CompletionItemKind.Keyword,
+                          insertText: keyword,
+                          range: range
+                      };
+                  });
+
+                  // Bonus: You can also add full snippets! 
+                  // Here is an example of auto-completing a print statement with parenthesis
+                  suggestions.push({
+                      label: 'println',
+                      kind: monaco.languages.CompletionItemKind.Snippet,
+                      insertText: 'print("${1:type here}");',
+                      insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                      documentation: 'Print statement with quotes',
+                      range: range
+                  });
+
+                  return { suggestions: suggestions };
+              }
+          });
+      });
+
+      // -----------------------------------------------------------------
+      // EDITOR INITIALIZATION
+      // -----------------------------------------------------------------
       editor = monaco.editor.create(document.getElementById('editor'), {
         value: '',
         language: 'plaintext',
@@ -156,6 +209,11 @@
         cursorBlinking: 'phase',
         cursorSmoothCaretAnimation: 'on',
         renderLineHighlight: 'line',
+        
+        // Ensure autocomplete menus pop up aggressively as you type
+        quickSuggestions: true,
+        suggestOnTriggerCharacters: true,
+        wordBasedSuggestions: true
       });
 
       sel.addEventListener('change', () => {
@@ -170,20 +228,16 @@
       window.monacoGetSelectedText = ()   => editor.getModel().getValueInRange(editor.getSelection());
       window.monacoInsertText      = (t)  => editor.executeEdits('', [{ range: editor.getSelection(), text: t }]);
 
-      // -----------------------------------------------------------------
       // WebView2 Communication Bridge
-      // -----------------------------------------------------------------
       if (window.chrome && window.chrome.webview) {
         window.chrome.webview.addEventListener('message', e => {
           try {
-            // Safely handle both objects (from PostWebMessageAsJson) and strings
             const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
             
             if (msg.action === 'setContent')  monacoSetContent(msg.code);
             if (msg.action === 'setLanguage') monacoSetLanguage(msg.language);
             
             if (msg.action === 'getContent') {
-                // Post the raw object back to C#. WebView2 formats it to JSON automatically.
                 window.chrome.webview.postMessage({ 
                     code: editor.getValue(), 
                     language: sel.value 
