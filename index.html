@@ -163,21 +163,35 @@
       });
 
       // WinForms bridge
-      window.monacoGetContent  = ()    => editor.getValue();
-      window.monacoSetContent  = (v)   => editor.setValue(v);
-      window.monacoSetLanguage = (id)  => { monaco.editor.setModelLanguage(editor.getModel(), id); sel.value = id; };
-      window.monacoGetLanguage = ()    => sel.value;
-      window.monacoGetSelectedText = () => editor.getModel().getValueInRange(editor.getSelection());
-      window.monacoInsertText  = (t)   => editor.executeEdits('', [{ range: editor.getSelection(), text: t }]);
+      window.monacoGetContent      = ()   => editor.getValue();
+      window.monacoSetContent      = (v)  => editor.setValue(v);
+      window.monacoSetLanguage     = (id) => { monaco.editor.setModelLanguage(editor.getModel(), id); sel.value = id; };
+      window.monacoGetLanguage     = ()   => sel.value;
+      window.monacoGetSelectedText = ()   => editor.getModel().getValueInRange(editor.getSelection());
+      window.monacoInsertText      = (t)  => editor.executeEdits('', [{ range: editor.getSelection(), text: t }]);
 
+      // -----------------------------------------------------------------
+      // WebView2 Communication Bridge
+      // -----------------------------------------------------------------
       if (window.chrome && window.chrome.webview) {
         window.chrome.webview.addEventListener('message', e => {
           try {
-            const msg = JSON.parse(e.data);
+            // Safely handle both objects (from PostWebMessageAsJson) and strings
+            const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+            
             if (msg.action === 'setContent')  monacoSetContent(msg.code);
             if (msg.action === 'setLanguage') monacoSetLanguage(msg.language);
-            if (msg.action === 'getContent')  window.chrome.webview.postMessage(JSON.stringify({ code: editor.getValue(), language: sel.value }));
-          } catch {}
+            
+            if (msg.action === 'getContent') {
+                // Post the raw object back to C#. WebView2 formats it to JSON automatically.
+                window.chrome.webview.postMessage({ 
+                    code: editor.getValue(), 
+                    language: sel.value 
+                });
+            }
+          } catch (err) {
+              console.error("WebView2 Bridge Error:", err);
+          }
         });
       }
     });
